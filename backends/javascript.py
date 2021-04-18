@@ -146,6 +146,7 @@ class JsBackend(Backend):
 								self.writeLine('break;')
 								self.dedent()
 								first = False
+							self.writeLine('}')
 					elif step[0] == 'if':
 						self.writeLine('if(%s) {' % genExpr(step[1], struct))
 						self.indent()
