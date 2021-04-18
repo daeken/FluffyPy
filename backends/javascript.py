@@ -37,6 +37,7 @@ class BinaryReader {
 	float32 = () => this.skip(4, this.dataView.getFloat32(this.position));
 	float64 = () => this.skip(8, this.dataView.getFloat64(this.position));
 	readBytes = count => this.skip(count, new Uint8Array(this.dataView.buffer.slice(this.dataView.byteOffset + this.position, this.dataView.byteOffset + this.position + count)));
+	readString = len => this.readBytes(len).map(String.fromCharCode).join('');
 }
 '''.strip()
 
@@ -113,7 +114,7 @@ class JsBackend(Backend):
 			def recur(steps):
 				for step in steps:
 					if step[0] == 'magic':
-						self.writeLine('if(br.read(%i) != %r) throw \'Magic mismatch in %s\';' % (len(step[1]), str(step[1]), struct.name))
+						self.writeLine('if(br.readString(%i) != %r) throw \'Magic mismatch in %s\';' % (len(step[1]), str(step[1]), struct.name))
 					elif step[0] == 'unsupported':
 						self.writeLine('throw \'Unsupported\';')
 					elif step[0] == 'unpack':
