@@ -1,3 +1,4 @@
+from javascript import JsBackend
 from python import PythonBackend
 
-backends = [PythonBackend]
+backends = [JsBackend, PythonBackend]
