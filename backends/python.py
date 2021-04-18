@@ -71,6 +71,9 @@ ffc = {
 }
 
 class PythonBackend(Backend):
+	LANGUAGE = 'python'
+	EXTENSION = 'py'
+
 	def generate(self, spec):
 		self.spec = spec
 		for line in banner:

@@ -148,7 +148,7 @@ class FluffySpec(object):
 				self.typedefs[node[0].value] = Typedef(basename, generics, node[1].value)
 			elif node.name == 'match-extension':
 				assert isinstance(node[1], Symbol)
-				self.fileMatchers[('extension', node[0])] = node[1].value
+				self.fileMatchers[('extension', node[0].lower())] = node[1].value
 			elif node.name == 'struct':
 				assert isinstance(node[0], Symbol)
 				basename, generics = self.parseTypedefName(node[0].value)
