@@ -95,16 +95,34 @@ class Type(object):
 		assert len(genericSubs) == len(self.generics)
 		return SpecializedType(self, genericSubs)
 
+	def __repr__(self):
+		return self.name
+
+	def equivalent(self, other):
+		raise Exception('Cannot check equivalence of %r' % self.__class__)
+
 class Struct(Type):
 	def __init__(self, basename, generics, body):
 		Type.__init__(self, basename, generics)
 		self.body = body
+
+	def equivalent(self, other):
+		if not isinstance(other, Struct):
+			return False
+		return self.basename == other.basename
 
 class SpecializedType(Type):
 	def __init__(self, base, genericSubs):
 		Type.__init__(self, base.basename, [x.name for x in genericSubs])
 		self.base = base
 		self.genericSubs = genericSubs
+
+	def equivalent(self, other):
+		if not isinstance(other, SpecializedType):
+			return False
+		if not self.base.equivalent(other.base):
+			return False
+		return all(a.equivalent(b) for a, b in zip(self.genericSubs, other.genericSubs))
 
 class Typedef(Type):
 	def __init__(self, basename, generics, otype):
