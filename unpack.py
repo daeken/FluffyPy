@@ -65,7 +65,11 @@ class RootContext(Context):
 		def sbt(name, format):
 			self.typemaps[name] = BuiltinType(name, format)
 		sbt('uint8', 'B')
+		sbt('uint16', 'H')
 		sbt('uint32', 'I')
+		sbt('int8', 'b')
+		sbt('int16', 'h')
+		sbt('int32', 'i')
 		sbt('float32', 'f')
 		self.typemaps['c-string'] = CStringType()
 
@@ -159,6 +163,28 @@ class StructInstance(object):
 					for elem in value:
 						if isinstance(elem, StructInstance):
 							elem.dump(fp, indent+2)
+						elif isinstance(elem, list): # Todo: Make this handle n-dimensional array nesting
+							if any(isinstance(x, list) or isinstance(x, StructInstance) for x in elem):
+								fp.write(tws)
+								fp.write('array {\n')
+								ttws = '\t' * (indent + 3)
+								for sub in elem:
+									if isinstance(sub, StructInstance):
+										sub.dump(fp, indent+3)
+									else:
+										fp.write(tws)
+										fp.write('value ')
+										fp.write(formatValue(sub, type))
+										fp.write('\n')
+								fp.write(tws)
+								fp.write('}\n')
+							else:
+								fp.write(tws)
+								fp.write('value')
+								for sub in elem:
+									fp.write(' ')
+									fp.write(formatValue(sub, type))
+								fp.write('\n')
 						else:
 							fp.write(tws)
 							fp.write('value ')
@@ -306,6 +332,26 @@ class Unpacker(FluffySpec):
 							break
 					else:
 						raise Exception(u'Unknown pattern in match: %s' % unicode(sub))
+			elif node.name == 'seek_abs':
+				assert isinstance(node[0], Symbol)
+				position = self.evaluateArgValue(node[0], context)
+				oldpos = self.fp.tell()
+				self.fp.seek(position, 0)
+				if node.children:
+					self.walkStructNodes(node.children, struct, context)
+					self.fp.seek(oldpos, 0)
+			elif node.name == 'seek_rel':
+				assert isinstance(node[0], Symbol) and isinstance(node[1], Symbol)
+				position = self.evaluateArgValue(node[0], context) + self.evaluateArgValue(node[1], context)
+				oldpos = self.fp.tell()
+				self.fp.seek(position, 0)
+				if node.children:
+					self.walkStructNodes(node.children, struct, context)
+					self.fp.seek(oldpos, 0)
+			elif node.name == 'mark_position':
+				assert len(node.arguments) == 1
+				assert isinstance(node[0], Symbol)
+				struct.variables[node[0].value] = self.fp.tell()
 			elif node.children: # Variable created and assigned
 				assert len(node.arguments) == 1
 				assert isinstance(node[0], Symbol)

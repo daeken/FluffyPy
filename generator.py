@@ -46,9 +46,15 @@ class Generator(FluffySpec):
 
 		self.builtinTypes = dict(
 			uint8=IntType(8, False),
+			uint16=IntType(16, False),
 			uint32=IntType(32, False),
+			uint64=IntType(64, False),
+			int8=IntType(8, True),
+			int16=IntType(16, True),
 			int32=IntType(32, True),
-			float32=FloatType(32)
+			int64=IntType(64, True),
+			float32=FloatType(32),
+			float64=FloatType(64),
 		)
 		self.builtinTypes['c-string'] = CStringType()
 
@@ -194,6 +200,27 @@ class Generator(FluffySpec):
 					return ('match', self.parseArgValue(node[0]), body)
 				elif node.name == 'unsupported':
 					return 'unsupported',
+				elif node.name == 'mark_position':
+					assert isinstance(node[0], Symbol)
+					name = node[0].value
+					if name not in struct.fields:
+						struct.fields[name] = []
+					nt = self.builtinTypes['uint64']
+					if nt not in struct.fields[name]:
+						struct.fields[name].append(nt)
+					return ('mark_position', name)
+				elif node.name == 'seek_abs':
+					value = self.parseArgValue(node[0])
+					if node.children:
+						return ('seek_abs_scoped', value, doRecur(node.children))
+					else:
+						return ('seek_abs', value)
+				elif node.name == 'seek_rel':
+					value = ('binary_op', self.parseArgValue(node[0]), '+', self.parseArgValue(node[1]))
+					if node.children:
+						return ('seek_abs_scoped', value, doRecur(node.children))
+					else:
+						return ('seek_abs', value)
 				elif node.children:
 					assert isinstance(node[0], Symbol)
 					name = node[0].value

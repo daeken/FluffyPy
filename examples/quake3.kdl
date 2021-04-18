@@ -1,0 +1,70 @@
+// This specification parses BSP and MD3 files from Quake3
+
+typedef :string :c-string
+typedef :Vector3 :float32[3]
+
+match-extension "bsp" :Bsp
+match-extension "md3" :Md3
+
+struct :Md3 {
+	magic "IDP3"
+	uint32 :version
+	uint8[64] :nameBytes
+	string :Name { cast<string> :nameBytes; }
+	uint32 :flags :numFrames :numTags :numSurfaces :numSkins
+	uint32 :ofsFrames :ofsTags :ofsSurfaces :ofsEnd
+	seek_abs :ofsFrames { Frame[numFrames] :Frames; }
+	seek_abs :ofsTags { Tag[numTags] :Tags; }
+	seek_abs :ofsSurfaces { Surface[numSurfaces] :Surfaces; }
+}
+
+struct :Frame {
+	Vector3 :MinBounds :MaxBounds :LocalOrigin
+	float32 :Radius
+	uint8[16] :nameBytes
+	string :Name { cast<string> :nameBytes; }
+}
+
+struct :Tag {
+	uint8[64] :nameBytes
+	string :Name { cast<string> :nameBytes; }
+	Vector3 :Origin
+	Vector3[3] :Orientation
+}
+
+struct :Surface {
+	mark_position :start
+	magic "IDP3"
+	uint8[64] :nameBytes
+	string :Name { cast<string> :nameBytes; }
+	uint32 :flags :numSurFrames :numShaders :numVerts :numTriangles
+	uint32 :ofsTriangles :ofsShaders :ofsSt :ofsXyzNormal :ofsEnd
+	seek_rel :start :ofsShaders { Shader[numShaders] :Shaders; }
+	seek_rel :start :ofsTriangles { Triangle[numTriangles] :Triangles; }
+	seek_rel :start :ofsSt { TexCoord[numVerts] :TexCoords; }
+	seek_rel :start :ofsXyzNormal { Vertex[numVerts][numSurFrames] :FrameVertices; }
+	seek_rel :start :ofsEnd
+}
+
+struct :Shader {
+	uint8[64] :nameBytes
+	string :Name { cast<string> :nameBytes; }
+	int32 :Index
+}
+
+struct :Triangle {
+	uint32[3] :Indexes
+}
+
+struct :TexCoord {
+	float32[2] :ST
+}
+
+// See https://icculus.org/homepages/phaethon/q3a/formats/md3format.html for encoding details
+struct :Vertex {
+	int16 :X :Y :Z
+	uint16 :Normal
+}
+
+struct :Bsp {
+}

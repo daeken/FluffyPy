@@ -58,6 +58,8 @@ def genExpr(tree, struct):
 			return None
 		if tree[0] == 'compare':
 			return '(%s) %s (%s)' % (sub(tree[1]), tree[2], sub(tree[3]))
+		elif tree[0] == 'binary_op':
+			return '(%s) %s (%s)' % (sub(tree[1]), tree[2], sub(tree[3]))
 		elif tree[0] == 'variable':
 			return sanitize(tree[1])
 		elif tree[0] == 'value':
@@ -129,6 +131,19 @@ class JsBackend(Backend):
 							self.writeLine('var %s = this.%s = %s;' % (sanitize(step[1]), sanitize(step[1]), genExpr(step[3], struct)))
 						else:
 							self.writeLine('var %s = %s;' % (sanitize(step[1]), genExpr(step[3], struct)))
+					elif step[0] == 'mark_position':
+						if isPublic(step[1]):
+							self.writeLine('var %s = this.%s = br.position;' % (sanitize(step[1]), sanitize(step[1])))
+						else:
+							self.writeLine('var %s = br.position;' % sanitize(step[1]))
+					elif step[0] == 'seek_abs_scoped':
+						oldPos = self.tempvar()
+						self.writeLine('let %s = br.position;' % oldPos)
+						self.writeLine('br.position = %s;' % genExpr(step[1], struct))
+						recur(step[2])
+						self.writeLine('br.position = %s;' % oldPos)
+					elif step[0] == 'seek_abs':
+						self.writeLine('br.position = %s;' % genExpr(step[1], struct))
 					elif step[0] == 'match':
 						if len(step[2]) == 0:
 							continue

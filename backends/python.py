@@ -4,6 +4,7 @@ import keyword
 import struct as S
 
 headerCode = r'''
+from __future__ import print_function
 import struct as __struct__
 def _arrayUnpack(fp, fmt, elemSize, rank):
 	return list(__struct__.unpack('<' + fmt*rank, fp.read(elemSize*rank)))
@@ -39,6 +40,8 @@ def genExpr(tree, struct):
 			return 'None'
 		if tree[0] == 'compare':
 			return '(%s) %s (%s)' % (sub(tree[1]), tree[2], sub(tree[3]))
+		elif tree[0] == 'binary_op':
+			return '(%s) %s (%s)' % (sub(tree[1]), tree[2], sub(tree[3]))
 		elif tree[0] == 'variable':
 			if tree[1] in struct.fields:
 				return 'self.%s' % sanitize(tree[1])
@@ -62,8 +65,13 @@ def genExpr(tree, struct):
 
 ifc = {
 	(8, False) : 'B', 
+	(16, False) : 'H', 
 	(32, False) : 'I', 
+	(64, False) : 'Q', 
+	(8, True) : 'b', 
+	(16, True) : 'h', 
 	(32, True) : 'i', 
+	(64, True) : 'q', 
 }
 ffc = {
 	32 : 'f', 
@@ -110,6 +118,16 @@ class PythonBackend(Backend):
 						self.writeLine('%s = %s' % (u', '.join('self.' + sanitize(var) for var in step[2]), self.genUnpack(step[1], struct, len(step[2]))))
 					elif step[0] == 'assign':
 						self.writeLine('self.%s = %s' % (sanitize(step[1]), genExpr(step[3], struct)))
+					elif step[0] == 'mark_position':
+						self.writeLine('self.%s = fp.tell()' % sanitize(step[1]))
+					elif step[0] == 'seek_abs_scoped':
+						oldPos = self.tempvar()
+						self.writeLine('%s = fp.tell()' % oldPos)
+						self.writeLine('fp.seek(%s, 0)' % genExpr(step[1], struct))
+						recur(step[2])
+						self.writeLine('fp.seek(%s, 0)' % oldPos)
+					elif step[0] == 'seek_abs':
+						self.writeLine('fp.seek(%s, 0)' % genExpr(step[1], struct))
 					elif step[0] == 'match':
 						comp = '__matchee__'
 						if len(step[2]) == 0:
@@ -167,6 +185,53 @@ class PythonBackend(Backend):
 
 		self.writeLine()
 		self.writeLine('__all__ = %r' % map(sanitize, spec.structs.keys()))
+		if not any(not struct.dependencies for struct in spec.structs.values()):
+			return
+		extMap = {ent[1] : type for ent, type in spec.fileMatchers.items() if ent[0] == 'extension'}
+		self.writeLine()
+		self.writeLine('if __name__==\'__main__\':')
+		self.indent()
+		self.writeLine('import sys')
+		self.writeLine('if len(sys.argv) <= %i:' % (1 if len(extMap) else 2))
+		self.indent()
+		self.writeLine('print(\'Usage: %%s <file_to_parse> %sstarting_struct%s\' %% sys.argv[0], file=sys.stderr)' % (('[', ']') if len(extMap) else ('<', '>')))
+		self.writeLine('sys.exit(1)')
+		self.dedent()
+		self.writeLine('elif len(sys.argv) > 2:')
+		self.indent()
+		first = True
+		for name, struct in spec.structs.items():
+			if struct.dependencies:
+				continue
+			self.writeLine('%sif sys.argv[2] == %r:' % ('' if first else 'el', sanitize(name)))
+			first = False
+			self.indent()
+			self.writeLine('start = %s' % sanitize(name))
+			self.dedent()
+		self.writeLine('else:')
+		self.indent()
+		self.writeLine('print(\'Invalid starting struct specified\', file=sys.stderr)')
+		self.writeLine('sys.exit(1)')
+		self.dedent()
+		self.dedent()
+		if extMap:
+			self.writeLine('else:')
+			self.indent()
+			self.writeLine('ext = sys.argv[1].rsplit(\'.\', 1)[-1].lower()')
+			first = True
+			for ext, type in extMap.items():
+				self.writeLine('%sif ext == %r:' % ('' if first else 'el', ext))
+				first = False
+				self.indent()
+				self.writeLine('start = %s' % sanitize(type))
+				self.dedent()
+			self.writeLine('else:')
+			self.indent()
+			self.writeLine('print(\'Could not determine starting struct from file extension\', file=sys.stderr)')
+			self.writeLine('sys.exit(1)')
+			self.dedent()
+			self.dedent()
+		self.writeLine('print(start().__unpack__(open(sys.argv[1], \'rb\')))')
 
 	def genUnpack(self, type, struct, count):
 		mult = lambda x: x if count == 1 else u', '.join([x] * count)
@@ -182,12 +247,13 @@ class PythonBackend(Backend):
 			bt = type.base
 			while isinstance(bt, Typedef):
 				bt = bt.otype
-			try:
-				if type.rankExpr[0] == 'value':
-					irank = int(type.rankExpr[1])
-					return mult(self.genUnpack(bt, struct, irank))
-			except:
-				pass
+			if not isinstance(bt, IntType) or bt.bits != 8 or bt.signed:
+				try:
+					if type.rankExpr[0] == 'value':
+						irank = int(type.rankExpr[1])
+						return mult(self.genUnpack(bt, struct, irank))
+				except:
+					pass
 			rank = genExpr(type.rankExpr, struct)
 			
 			if isinstance(bt, IntType) or isinstance(bt, FloatType):

@@ -16,6 +16,7 @@ class Backend(object):
 	def __init__(self, fp):
 		self.fp = fp
 		self.curIndent = 0
+		self.tempI = 0
 
 	def writeLine(self, *args):
 		self.fp.write(self.indentStr * self.curIndent + u' '.join(args) + '\n')
@@ -28,3 +29,7 @@ class Backend(object):
 
 	def dedent(self):
 		self.curIndent -= 1
+
+	def tempvar(self):
+		self.tempI += 1
+		return '_temp_%i' % self.tempI
