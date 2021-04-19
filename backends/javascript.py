@@ -205,7 +205,7 @@ class JsBackend(Backend):
 			ts = self.spec.structs[type.name]
 			depMatch = ''
 			if ts.dependencies:
-				depMatch = ', ' + u', '.join(map(sanitize, sorted(ts.dependencies.keys())))
+				depMatch = ', ' + u', '.join(sanitize(key if key in struct.dependencies else 'this.' + key) for key in sorted(ts.dependencies.keys()))
 			return 'new %s(br%s)' % (sanitize(type.name), depMatch)
 		print '%r %s' % (type.__class__, type)
 		assert False
