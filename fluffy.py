@@ -10,6 +10,7 @@ parser.add_argument('-o', '--out', dest='output', metavar='FILE', type=str, help
 parser.add_argument('-u', '--unpack', dest='unpack', metavar='FILE', type=str, help='input binary to parse')
 parser.add_argument('-l', '--language', dest='language', help='language to generate (choices: %s)' % ', '.join(x.LANGUAGE for x in backends))
 parser.add_argument('-s', '--struct', dest='struct', help='top-level struct to begin unpacking')
+parser.add_argument('-n', '--namespace', dest='namespace', help='namespace for generated code')
 args = parser.parse_args()
 
 if args.unpack:
@@ -52,4 +53,4 @@ else:
 		print('Could not determine language for generation -- specify it', file=sys.stderr)
 		sys.exit(1)
 
-	Generator(io.open(args.specification, 'r', encoding='utf-8'), backend(io.open(args.output, 'w', encoding='utf-8') if args.output else sys.stdout))
+	Generator(io.open(args.specification, 'r', encoding='utf-8'), backend(io.open(args.output, 'w', encoding='utf-8') if args.output else sys.stdout, args.namespace))
