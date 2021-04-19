@@ -25,6 +25,10 @@ def _prepr(expr, indent=1):
 		else:
 			return u'\n'.join(ti + x for x in expr)
 	return expr
+def _divHelper(a, b):
+	if (isinstance(a, int) or isinstance(a, long)) and (isinstance(b, int) or isinstance(b, long)):
+		return a // b
+	return a / b
 '''.strip()
 
 def sanitize(name):
@@ -41,7 +45,10 @@ def genExpr(tree, struct):
 		if tree[0] == 'compare':
 			return '(%s) %s (%s)' % (sub(tree[1]), tree[2], sub(tree[3]))
 		elif tree[0] == 'binary_op':
-			return '(%s) %s (%s)' % (sub(tree[1]), tree[2], sub(tree[3]))
+			if tree[2] == '/':
+				return '_divHelper(%s, %s)' % (sub(tree[1]), sub(tree[3]))
+			else:
+				return '(%s) %s (%s)' % (sub(tree[1]), tree[2], sub(tree[3]))
 		elif tree[0] == 'variable':
 			if tree[1] in struct.fields:
 				return 'self.%s' % sanitize(tree[1])
@@ -248,12 +255,9 @@ class PythonBackend(Backend):
 			while isinstance(bt, Typedef):
 				bt = bt.otype
 			if not isinstance(bt, IntType) or bt.bits != 8 or bt.signed:
-				try:
-					if type.rankExpr[0] == 'value':
-						irank = int(type.rankExpr[1])
-						return mult(self.genUnpack(bt, struct, irank))
-				except:
-					pass
+				irank = self.spec.evalConstExpr(type.rankExpr)
+				if irank is not None:
+					return mult(self.genUnpack(bt, struct, irank))
 			rank = genExpr(type.rankExpr, struct)
 			
 			if isinstance(bt, IntType) or isinstance(bt, FloatType):

@@ -1,7 +1,8 @@
 // This specification parses BSP and MD3 files from Quake3
 
-typedef :string :c-string
+typedef :string :cstring
 typedef :Vector3 :float32[3]
+typedef :IntVector3 :int32[3]
 
 match-extension "bsp" :Bsp
 match-extension "md3" :Md3
@@ -67,4 +68,137 @@ struct :Vertex {
 }
 
 struct :Bsp {
+	magic "IBSP"
+	uint32 :version
+	DirEntry[17] :dirEntries
+
+	seek_abs :dirEntries[0].offset {
+		uint8[dirEntries[0].length] :entitiesBytes;
+		string :Entities { cast<string> :entitiesBytes; }
+	}
+	seek_abs :dirEntries[1].offset {
+		Texture[dirEntries[1].length/sizeof(Texture)] :Textures
+	}
+	seek_abs :dirEntries[2].offset {
+		Plane[dirEntries[2].length/sizeof(Plane)] :Planes
+	}
+	seek_abs :dirEntries[3].offset {
+		Node[dirEntries[3].length/sizeof(Node)] :Nodes
+	}
+	seek_abs :dirEntries[4].offset {
+		Leaf[dirEntries[4].length/sizeof(Leaf)] :Leafs
+	}
+	seek_abs :dirEntries[5].offset {
+		uint32[dirEntries[5].length/sizeof(uint32)] :LeafFaces
+	}
+	seek_abs :dirEntries[6].offset {
+		uint32[dirEntries[6].length/sizeof(uint32)] :LeafBrushes
+	}
+	seek_abs :dirEntries[7].offset {
+		Model[dirEntries[7].length/sizeof(Model)] :Models
+	}
+	seek_abs :dirEntries[8].offset {
+		Brush[dirEntries[8].length/sizeof(Brush)] :Brushes
+	}
+	seek_abs :dirEntries[9].offset {
+		BrushSide[dirEntries[9].length/sizeof(BrushSide)] :BrushSides
+	}
+	seek_abs :dirEntries[10].offset {
+		BspVertex[dirEntries[10].length/sizeof(BspVertex)] :Vertices
+	}
+	seek_abs :dirEntries[11].offset {
+		uint32[dirEntries[11].length/sizeof(uint32)] :MeshVerts
+	}
+	seek_abs :dirEntries[12].offset {
+		Fog[dirEntries[12].length/sizeof(Fog)] :Fogs
+	}
+	seek_abs :dirEntries[13].offset {
+		Face[dirEntries[13].length/sizeof(Face)] :Faces
+	}
+	seek_abs :dirEntries[14].offset {
+		Lightmap[dirEntries[14].length/sizeof(Lightmap)] :Lightmaps
+	}
+	seek_abs :dirEntries[15].offset {
+		LightVol[dirEntries[15].length/sizeof(LightVol)] :LightVols
+	}
+	seek_abs :dirEntries[16].offset {
+		VisData :VisData
+	}
+}
+
+struct :DirEntry {
+	uint32 :offset :length
+}
+
+struct :Texture {
+	uint8[64] :nameBytes
+	string :Name { cast<string> :nameBytes; }
+	uint32 :SurfaceFlags :ContentFlags
+}
+
+struct :Plane {
+	Vector3 :Normal
+	float32 :Distance
+}
+
+struct :Node {
+	uint32 :Plane
+	int32[2] :Children
+	IntVector3 :Mins :Maxs
+}
+
+struct :Leaf {
+	uint32 :Cluster :Area
+	IntVector3 :Mins :Maxs
+	uint32 :FirstLeafFace :NumLeafFaces :FirstLeafBrush :NumLeafBrushes
+}
+
+struct :Model {
+	Vector3 :Mins :Maxs
+	uint32 :FirstFace :NumFaces :FirstBrush :NumBrushes
+}
+
+struct :Brush {
+	uint32 :FirstBrushSide :NumBrushSides :Texture
+}
+
+struct :BrushSide {
+	uint32 :Plane :Texture
+}
+
+struct :BspVertex {
+	Vector3 :Position
+	float32[2] :SurfaceTexCoords :LightmapTexCoords
+	Vector3 :Normal
+	uint8[4] :Color
+}
+
+struct :Fog {
+	uint8[64] :nameBytes
+	string :Name { cast<string> :nameBytes; }
+	uint32 :Brush
+	int32 :VisibleSide
+}
+
+struct :Face {
+	int32 :Texture :Effect
+	uint32 :Type :FirstVertex :NumVertices :FirstMeshVert :NumMeshVerts
+	int32 :Lightmap
+	int32[2] :LightmapStart :LightmapSize
+	Vector3 :LightmapOrigin :LightmapS :LightmapT :Normal
+	int32[2] :Size
+}
+
+struct :Lightmap {
+	uint8[128*128*3] :Pixels
+}
+
+struct :LightVol {
+	uint8[3] :AmbientColor :DirectionalColor
+	uint8 :Phi :Theta
+}
+
+struct :VisData {
+	uint32 :numVecs :vecSize
+	uint8[vecSize][numVecs] :Vecs
 }

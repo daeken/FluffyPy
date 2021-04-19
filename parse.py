@@ -12,13 +12,15 @@ type = array:array_type | generic:generic_type | named:identifier;
 array_type = base:type '[' rank:value ']';
 generic_type = base:type '<' generics:'|'.{ type }+ '>';
 
-value = comparison | slice | index | member_access | number | variable;
+value = comparison | binary_op | slice | index | member_access | call | number | variable;
 comparison = left:value comparison:('<' | '<=' | '==' | '!=' | '>=' | '>') right:value;
+binary_op = left:value binary_op:('+' | '-' | '*' | '/') right:value; # TODO: Add order of operations!
 slice = slice_middle:slice_middle | slice_left:slice_left | slice_right:slice_right;
 slice_right = start:value '...';
 slice_left = '...' end:value;
 slice_middle = start:value '...' end:value;
 member_access = base:value '.' member:identifier;
+call = func:identifier '(' arg:value ')';
 index = base:value '[' index:value ']';
 variable = variable:identifier;
 identifier = !digit @+:first_identifier_char {@+:rest_identifier_char};
@@ -30,8 +32,8 @@ octal = octal:/[+\-]?0o[0-7][0-7_]*/;
 binary = binary:/[+\-]?0b[01][01_]*/;
 
 digit = /[0-9]/;
-first_identifier_char = !linespace !/[\\<>{};\[\]=,"\.]/ /./;
-rest_identifier_char = !linespace !/[\\\[\]<>;=,"\.]/ /./;
+first_identifier_char = !linespace !/[\\<>{}();\[\]=,"\.+\-*\/]/ /./;
+rest_identifier_char = !linespace !/[\\\[\]()<>;=,"\.+\-*\/]/ /./;
 linespace = newline | ws | $;
 newline = /(\r\n|[\r\n\u0085\u000C\u2028\u2029])/;
 ws = /([\t \u00A0\u1680\u2000\u2001\u2002\u2003\u2004\u2005\u2006\u2007\u2008\u2009\u200A\u202F\u205F\u3000]|\uFFEF)+/;
@@ -54,6 +56,10 @@ def parseValueAst(ast):
 		return ('property', parseValueAst(ast['base']), u''.join(ast['member']))
 	elif 'comparison' in ast:
 		return ('compare', parseValueAst(ast['left']), ast['comparison'], parseValueAst(ast['right']))
+	elif 'binary_op' in ast:
+		return ('binary_op', parseValueAst(ast['left']), ast['binary_op'], parseValueAst(ast['right']))
+	elif 'func' in ast:
+		return ('call', u''.join(ast['func']), parseValueAst(ast['arg']))
 	print ast
 	assert False
 

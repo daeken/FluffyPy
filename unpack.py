@@ -21,7 +21,7 @@ class ArrayType(BuiltinType):
 
 class CStringType(Type):
 	def __init__(self):
-		Type.__init__(self, u'c-string', None)
+		Type.__init__(self, u'cstring', None)
 
 	def castFrom(self, value):
 		try:
@@ -71,7 +71,7 @@ class RootContext(Context):
 		sbt('int16', 'h')
 		sbt('int32', 'i')
 		sbt('float32', 'f')
-		self.typemaps['c-string'] = CStringType()
+		self.typemaps['cstring'] = CStringType()
 
 namedEscapes = {
 	'\\': '\\', 
@@ -223,6 +223,27 @@ class Unpacker(FluffySpec):
 			return self.getNamedType(ctype, tcontext)
 		return self.typedefs[typestr]
 
+	def getTypeSize(self, type, context):
+		if isinstance(type, Struct):
+			def walkNodes(body):
+				size = 0
+				for node in body:
+					if node.children:
+						continue
+					else:
+						type = self.parseTypespec(node.name, context)
+						size += self.getTypeSize(type, context) * len(node.arguments)
+				return size
+			return walkNodes(type.body)
+		elif isinstance(type, ArrayType):
+			return self.getTypeSize(type.base, context) * type.rank
+		elif isinstance(type, BuiltinType):
+			return type.size
+		elif isinstance(type, Typedef):
+			return self.getTypeSize(self.parseTypespec(type.otype, context), context)
+		print type, type.__class__
+		assert False
+
 	def evaluateValue(self, tree, context):
 		if tree is None:
 			return None
@@ -243,7 +264,7 @@ class Unpacker(FluffySpec):
 		elif tree[0] == 'property':
 			context = context.shiftTo(self.evaluateValue(tree[1], context))
 			return self.evaluateValue(('variable', tree[2]), context)
-		elif tree[0] == 'compare':
+		elif tree[0] == 'compare' or tree[0] == 'binary_op':
 			left, right = self.evaluateValue(tree[1], context), self.evaluateValue(tree[3], context)
 			return {
 				'<' : lambda a, b: a <  b, 
@@ -252,7 +273,15 @@ class Unpacker(FluffySpec):
 				'!=': lambda a, b: a != b, 
 				'>=': lambda a, b: a >= b, 
 				'>' : lambda a, b: a >  b, 
+				'+' : lambda a, b: a +  b, 
+				'-' : lambda a, b: a -  b, 
+				'*' : lambda a, b: a *  b, 
+				'/' : lambda a, b: a // b if (isinstance(a, int) or isinstance(a, long)) and (isinstance(b, int) or isinstance(b, long)) else a / b, 
 			}[tree[2]](left, right)
+		elif tree[0] == 'call' and tree[1] == 'sizeof':
+			assert isinstance(tree[2], tuple) and tree[2][0] == 'variable'
+			type = self.getNamedType(tree[2][1], context)
+			return self.getTypeSize(type, context)
 		print tree
 		assert False
 

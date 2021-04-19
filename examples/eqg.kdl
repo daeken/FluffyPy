@@ -1,6 +1,6 @@
 // This specification parses the majority of files in EverQuest EQG archives
 
-typedef :string :c-string
+typedef :string :cstring
 
 struct :StringRef<T> {
 	T :index

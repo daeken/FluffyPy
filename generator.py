@@ -55,8 +55,8 @@ class Generator(FluffySpec):
 			int64=IntType(64, True),
 			float32=FloatType(32),
 			float64=FloatType(64),
+			cstring=CStringType(),
 		)
-		self.builtinTypes['c-string'] = CStringType()
 
 		for name, type in self.typedefs.items():
 			if isinstance(type, Typedef):
@@ -264,6 +264,52 @@ class Generator(FluffySpec):
 			return self.builtinTypes[name]
 		raise Exception('Unknown type: %s' % name)
 
+	def getTypeSize(self, type):
+		if isinstance(type, Struct):
+			def walkNodes(body):
+				size = 0
+				for node in body:
+					if node.children:
+						continue
+					else:
+						type = self.parseTypespec(node.name)
+						size += self.getTypeSize(type) * len(node.arguments)
+				return size
+			return walkNodes(type.body)
+		elif isinstance(type, ArrayType):
+			return self.getTypeSize(type.base) * self.evalConstExpr(type.rankExpr)
+		elif isinstance(type, IntType) or isinstance(type, FloatType):
+			return type.bits // 8
+		elif isinstance(type, Typedef):
+			return self.getTypeSize(type.otype)
+		print type
+		assert False
+
+	def evalConstExpr(self, expr):
+		def ece(tree):
+			if tree[0] == 'compare' or tree[0] == 'binary_op':
+				left, right = ece(tree[1]), ece(tree[3])
+				return {
+					'<' : lambda a, b: a <  b, 
+					'<=': lambda a, b: a <= b, 
+					'==': lambda a, b: a == b, 
+					'!=': lambda a, b: a != b, 
+					'>=': lambda a, b: a >= b, 
+					'>' : lambda a, b: a >  b, 
+					'+' : lambda a, b: a +  b, 
+					'-' : lambda a, b: a -  b, 
+					'*' : lambda a, b: a *  b, 
+					'/' : lambda a, b: a // b if (isinstance(a, int) or isinstance(a, long)) and (isinstance(b, int) or isinstance(b, long)) else a / b, 
+				}[tree[2]](left, right)
+			elif tree[0] == 'value':
+				return tree[1]
+			else:
+				assert False
+		try:
+			return ece(expr)
+		except:
+			return None
+
 	def parseTypespec(self, typeTree):
 		if isinstance(typeTree, str) or isinstance(typeTree, unicode):
 			typeTree = parseTypeString(typeTree)
@@ -300,9 +346,12 @@ class Generator(FluffySpec):
 			self.parseValue(tree[2])
 		elif tree[0] == 'property':
 			self.parseValue(tree[1])
-		elif tree[0] == 'compare':
-			self.parseValue(tree[1])
-			self.parseValue(tree[3])
+		elif tree[0] == 'compare' or tree[0] == 'binary_op':
+			return (tree[0], self.parseValue(tree[1]), tree[2], self.parseValue(tree[3]))
+		elif tree[0] == 'call':
+			assert isinstance(tree[2], tuple) and tree[2][0] == 'variable'
+			type = self.getNamedType(tree[2][1])
+			return ('value', self.getTypeSize(type))
 		elif tree[0] == 'value':
 			pass
 		else:
