@@ -2,12 +2,13 @@ from generator import *
 from backend import banner, Backend
 
 headerCode = r'''
+let _bytesToString = bytes => bytes.map(c => String.fromCharCode(c)).join('');
 let _bytesToCString = bytes => {
 	let nind = bytes.indexOf(0);
 	if(nind == -1)
-		return bytes.map(String.fromCharCode).join('');
+		return _bytesToString(bytes);
 	else
-		return bytes.slice(nind).map(String.fromCharCode).join('');
+		return _bytesToString(bytes.slice(0, nind));
 };
 class BinaryReader {
 	constructor(data) {
@@ -28,16 +29,16 @@ class BinaryReader {
 		return value;
 	}
 
-	uint8 = () => this.skip(1, this.dataView.getUint8(this.position));
-	uint16 = () => this.skip(2, this.dataView.getUint16(this.position));
-	uint32 = () => this.skip(4, this.dataView.getUint32(this.position));
-	int8 = () => this.skip(1, this.dataView.getInt8(this.position));
-	int16 = () => this.skip(2, this.dataView.getInt16(this.position));
-	int32 = () => this.skip(4, this.dataView.getInt32(this.position));
-	float32 = () => this.skip(4, this.dataView.getFloat32(this.position));
-	float64 = () => this.skip(8, this.dataView.getFloat64(this.position));
-	readBytes = count => this.skip(count, new Uint8Array(this.dataView.buffer.slice(this.dataView.byteOffset + this.position, this.dataView.byteOffset + this.position + count)));
-	readString = len => this.readBytes(len).map(String.fromCharCode).join('');
+	uint8 = () => this.skip(1, this.dataView.getUint8(this.position, true));
+	uint16 = () => this.skip(2, this.dataView.getUint16(this.position, true));
+	uint32 = () => this.skip(4, this.dataView.getUint32(this.position, true));
+	int8 = () => this.skip(1, this.dataView.getInt8(this.position, true));
+	int16 = () => this.skip(2, this.dataView.getInt16(this.position, true));
+	int32 = () => this.skip(4, this.dataView.getInt32(this.position, true));
+	float32 = () => this.skip(4, this.dataView.getFloat32(this.position, true));
+	float64 = () => this.skip(8, this.dataView.getFloat64(this.position, true));
+	readBytes = count => this.skip(count, Array.from(new Uint8Array(this.dataView.buffer.slice(this.dataView.byteOffset + this.position, this.dataView.byteOffset + this.position + count))));
+	readString = len => _bytesToString(this.readBytes(len));
 }
 '''.strip()
 
@@ -61,7 +62,10 @@ def genExpr(tree, struct):
 		elif tree[0] == 'binary_op':
 			return '(%s) %s (%s)' % (sub(tree[1]), tree[2], sub(tree[3]))
 		elif tree[0] == 'variable':
-			return sanitize(tree[1])
+			if tree[1] in struct.fields:
+				return 'this.%s' % sanitize(tree[1])
+			else:
+				return sanitize(tree[1])
 		elif tree[0] == 'value':
 			return repr(tree[1])
 		elif tree[0] == 'property':
@@ -113,6 +117,9 @@ class JsBackend(Backend):
 			self.writeLine('constructor(br%s) {' % (', ' + u', '.join(map(sanitize, sorted(struct.dependencies.keys()))) if struct.dependencies else ''))
 			self.indent()
 			self.writeLine('if(!(br instanceof BinaryReader)) br = new BinaryReader(br);')
+			for fn in struct.fields:
+				if not isPublic(fn):
+					self.writeLine('Object.defineProperty(this, \'%s\', {enumerable: false, writable: true});' % sanitize(fn))
 			def recur(steps):
 				for step in steps:
 					if step[0] == 'magic':
@@ -122,20 +129,11 @@ class JsBackend(Backend):
 					elif step[0] == 'unpack':
 						unpacker = self.genUnpack(step[1], struct)
 						for var in step[2]:
-							if isPublic(var):
-								self.writeLine('var %s = this.%s = %s;' % (sanitize(var), sanitize(var), unpacker))
-							else:
-								self.writeLine('var %s = %s;' % (sanitize(var), unpacker))
+							self.writeLine('this.%s = %s;' % (sanitize(var), unpacker))
 					elif step[0] == 'assign':
-						if isPublic(step[1]):
-							self.writeLine('var %s = this.%s = %s;' % (sanitize(step[1]), sanitize(step[1]), genExpr(step[3], struct)))
-						else:
-							self.writeLine('var %s = %s;' % (sanitize(step[1]), genExpr(step[3], struct)))
+						self.writeLine('this.%s = %s;' % (sanitize(step[1]), genExpr(step[3], struct)))
 					elif step[0] == 'mark_position':
-						if isPublic(step[1]):
-							self.writeLine('var %s = this.%s = br.position;' % (sanitize(step[1]), sanitize(step[1])))
-						else:
-							self.writeLine('var %s = br.position;' % sanitize(step[1]))
+						self.writeLine('this.%s = br.position;' % (sanitize(step[1])))
 					elif step[0] == 'seek_abs_scoped':
 						oldPos = self.tempvar()
 						self.writeLine('let %s = br.position;' % oldPos)
