@@ -3,6 +3,13 @@ typedef Vector2 = float32[2]
 typedef Vector3 = float32[3]
 typedef Quaternion = float32[4]
 
+match_extension 'zon', Zon
+match_extension 'ter', Ter
+match_extension 'mod', Mod
+match_extension 'ani', Ani
+match_extension 's3d', S3D
+match_extension 'eqg', S3D
+
 typedef StringRef {
 	uint32 index
 	return string(stringTable[index...])
@@ -13,10 +20,14 @@ struct Mod {
 	uint32 Version, strlen, numMat, numVert, numTri, numBones
 	uint8[strlen] stringTable
 	Material[numMat] Materials
-	(Version < 3 ? Vertex : Vertex3)[numVert] Vertices
+	if(Version < 3) {
+		Vertex[numVert] Vertices
+	} else {
+		Vertex3[numVert] Vertices
+	}
 	Triangle[numTri] Triangles
 	Bone[numBones] Bones
-	if numBones > 0 {
+	if(numBones > 0) {
 		BoneAssignment[numVert] BoneAssignments
 	}
 }
@@ -26,7 +37,11 @@ struct Ter {
 	uint32 Version, strlen, numMat, numVert, numTri
 	uint8[strlen] stringTable
 	Material[numMat] Materials
-	(Version < 3 ? Vertex : Vertex3)[numVert] Vertices
+	if(Version < 3) {
+		Vertex[numVert] Vertices
+	} else {
+		Vertex3[numVert] Vertices
+	}
 	Triangle[numTri] Triangles
 }
 
@@ -40,11 +55,11 @@ struct Material {
 struct MatProperty {
 	StringRef Name
 	uint32 Type
-	match Type {
-		case 0 { float32 FloatValue }
-		case 2 { StringRef StringValue }
-		case 3 { uint32 ARGBValue }
-		default { unsupported }
+	match(Type) {
+		case 0: { float32 FloatValue }
+		case 2: { StringRef StringValue }
+		case 3: { uint32 ARGBValue }
+		default: { unsupported() }
 	}
 }
 
@@ -115,7 +130,7 @@ struct Placeable {
 	uint32 index
 	Filename = files[index]
 	StringRef Name
-	Vector3 Position Rotation
+	Vector3 Position, Rotation
 	float32 Scale
 }
 
@@ -127,9 +142,9 @@ struct S3D {
 		FileEntry[count] entries
 	}
 
-	for i in 0...count {
+	for(i in 0...count) {
 		entry = entries[i]
-		if entry.crc == 0x61580AC9 {
+		if(entry.crc == 0x61580AC9) {
 			fileList = Directory(entry.decompressedData)
 			delete entries[i]
 			break
@@ -145,7 +160,7 @@ struct FileEntry {
 	uint32 crc, offset, size
 	uint8[0] DecompressedData
 	uint32 len = 0
-	while len < size {
+	while(len < size) {
 		uint32 defLen, infLen
 		uint8[defLen] compressedData
 		decompressedData += zlib_inflate(compressedData)
@@ -164,10 +179,3 @@ typedef DirEntry {
 	uint8[fnLen] fnBytes
 	return string(fnBytes)
 }
-
-match_extension('zon', Zon)
-match_extension('ter', Ter)
-match_extension('mod', Mod)
-match_extension('ani', Ani)
-match_extension('s3d', S3D)
-match_extension('eqg', S3D)

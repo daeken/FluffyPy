@@ -2,28 +2,63 @@ import sys
 from kdl import *
 import tatsu
 
-tvGrammar = r'''
-@@whitespace :: /\s+/
+fslGrammar = r'''
+@@whitespace :: /([\t \u00A0\u1680\u2000\u2001\u2002\u2003\u2004\u2005\u2006\u2007\u2008\u2009\u200A\u202F\u205F\u3000\uFFEF])+/
 
-toplevel_type = type $;
-toplevel_value = value $;
+start = stmts:{top_level_stmt} $;
 
-type = array:array_type | generic:generic_type | named:identifier;
-array_type = base:type '[' rank:value ']';
-generic_type = base:type '<' generics:'|'.{ type }+ '>';
+top_level_stmt = @:(typedef_alias | typedef_macro | struct | match_extension) eol;
 
-value = comparison | binary_op | slice | index | member_access | call | number | variable;
-comparison = left:value comparison:('<' | '<=' | '==' | '!=' | '>=' | '>') right:value;
-binary_op = left:value binary_op:('+' | '-' | '*' | '/') right:value; # TODO: Add order of operations!
+match_extension = 'match_extension ' extension:string ',' type:type;
+typedef_alias = 'typedef ' alias_to:typedef '=' alias_from:type;
+typedef = instanced_typedef | named_typedef;
+instanced_typedef = base:identifier '<' argnames:','.{ identifier }+;
+named_typedef = name:identifier;
+typedef_macro = 'typedef ' macro_name:typedef body:block;
+
+type = array:array_type | instanced:instanced_type | named:identifier;
+array_type = base:type '[' [rank:value] ']';
+instanced_type = base:type '<' args:','.{ value }+ '>';
+
+block = '{' {{newline} @+:block_stmt {newline}} '}';
+
+struct = 'struct ' struct_name:typedef body:block;
+
+block_stmt = @:(if_stmt | while_stmt | match_stmt | for_stmt | delete_stmt | return_values_stmt | return_stmt | break_stmt | continue_stmt | decl_stmt | value_stmt) eol;
+
+if_stmt = 'if' '(' cond:value ')' then:block ['else' _else:block];
+while_stmt = 'while' '(' cond:value ')' do:block;
+match_stmt = 'match' '(' cond:value ')' '{' {{newline} cases+:(match_case | match_default) {newline}} '}';
+match_case = 'case ' case:','.{value}+ ':' body:block eol;
+match_default = 'default' ':' default:block eol;
+for_stmt = 'for' '(' var:identifier 'in ' iter:value ')' body:block;
+delete_stmt = 'delete ' value;
+return_values_stmt = 'return ' values:','.{value};
+return_stmt = 'return';
+break_stmt = 'break';
+continue_stmt = 'continue';
+
+decl_stmt = decl_type:type vars:','.{subdecl}+;
+subdecl = name:identifier ['=' value:value];
+
+value_stmt = value:value;
+
+value = tuple | group | assign | ternary | binary_op | slice | index | member_access | call | block_call | string | number | variable;
+tuple = '(' members+:value ',' members+:','.{value} ')';
+group = '(' @:value ')';
+assign = lhand:identifier op:('=' | '+=' | '-=' | '*=' | '/=') rhand:value;
+ternary = ternary_cond:value '?' left:value ':' right:value;
+binary_op = left:value binary_op:('+' | '-' | '*' | '/' | '<' | '<=' | '==' | '!=' | '>=' | '>') right:value; # TODO: Add order of operations!
 slice = slice_middle:slice_middle | slice_left:slice_left | slice_right:slice_right;
 slice_right = start:value '...';
 slice_left = '...' end:value;
 slice_middle = start:value '...' end:value;
 member_access = base:value '.' member:identifier;
-call = func:identifier '(' arg:value ')';
+call = callee:value '(' args:','.{value} ')' [block:block];
+block_call = callee:value block:block;
 index = base:value '[' index:value ']';
 variable = variable:identifier;
-identifier = !digit @+:first_identifier_char {@+:rest_identifier_char};
+identifier = !digit /[^\\<>{}();\[\]=,"'\.+\-*!\/?:\t \u00A0\u1680\u2000\u2001\u2002\u2003\u2004\u2005\u2006\u2007\u2008\u2009\u200A\u202F\u205F\u3000\uFFEF\r\n\u0085\u000C\u2028\u2029]+/;
 number = hex | octal | binary | decimal;
 
 decimal = decimal:/[+\-]?[0-9][0-9_]*/;
@@ -31,147 +66,24 @@ hex = hex:/[+\-]?0x[0-9a-fA-F][0-9a-fA-F_]*/;
 octal = octal:/[+\-]?0o[0-7][0-7_]*/;
 binary = binary:/[+\-]?0b[01][01_]*/;
 
+string = /'[^']*'/; # TODO: UNFUCK
+
 digit = /[0-9]/;
-first_identifier_char = !linespace !/[\\<>{}();\[\]=,"\.+\-*\/]/ /./;
-rest_identifier_char = !linespace !/[\\\[\]()<>;=,"\.+\-*\/]/ /./;
-linespace = newline | ws | $;
 newline = /(\r\n|[\r\n\u0085\u000C\u2028\u2029])/;
-ws = /([\t \u00A0\u1680\u2000\u2001\u2002\u2003\u2004\u2005\u2006\u2007\u2008\u2009\u200A\u202F\u205F\u3000]|\uFFEF)+/;
+single_line_comment = '//' ->newline;
+
+eol = {$ | newline | ';' | &'}' | single_line_comment}+;
 '''
 
-model = tatsu.compile(tvGrammar, name='TvGrammar')
-
-def parseValueAst(ast):
-	if 'variable' in ast:
-		return ('variable', u''.join(ast['variable']))
-	elif 'decimal' in ast:
-		return ('value', int(ast['decimal'].replace('_', '')))
-	elif 'index' in ast:
-		return ('subscript', parseValueAst(ast['base']), parseValueAst(ast['index']))
-	elif 'slice_right' in ast:
-		return ('slice', parseValueAst(ast['slice_right']['start']), None)
-	elif 'slice_left' in ast:
-		return ('slice', None, parseValueAst(ast['slice_left']['end']))
-	elif 'member' in ast:
-		return ('property', parseValueAst(ast['base']), u''.join(ast['member']))
-	elif 'comparison' in ast:
-		return ('compare', parseValueAst(ast['left']), ast['comparison'], parseValueAst(ast['right']))
-	elif 'binary_op' in ast:
-		return ('binary_op', parseValueAst(ast['left']), ast['binary_op'], parseValueAst(ast['right']))
-	elif 'func' in ast:
-		return ('call', u''.join(ast['func']), parseValueAst(ast['arg']))
-	print ast
-	assert False
-
-vsCache = {}
-def parseValueString(value):
-	if value in vsCache:
-		return vsCache[value]
-	ast = model.parse(value, start='toplevel_value')
-	tree = parseValueAst(ast)
-	vsCache[value] = tree
-	return tree
-
-tsCache = {}
-def parseTypeString(type):
-	if type in tsCache:
-		return tsCache[type]
-	ast = model.parse(type, start='toplevel_type')
-	def recur(ast):
-		if 'named' in ast:
-			return ('named', u''.join(ast['named']))
-		elif 'array' in ast:
-			return ('array', recur(ast['array']['base']), parseValueAst(ast['array']['rank']))
-		elif 'generic' in ast:
-			return ('generic', recur(ast['generic']['base']), map(recur, ast['generic']['generics']))
-		else:
-			print ast
-			assert False
-	tree = recur(ast)
-	tsCache[type] = tree
-	return tree
-
-class Type(object):
-	def __init__(self, basename, generics):
-		self.basename = basename
-		self.generics = generics
-		self.name = '%s<%s>' % (basename, u'|'.join(generics)) if generics else basename
-
-	def specialize(self, genericSubs):
-		assert len(genericSubs) == len(self.generics)
-		return SpecializedType(self, genericSubs)
-
-	def __repr__(self):
-		return self.name
-
-	def equivalent(self, other):
-		raise Exception('Cannot check equivalence of %r' % self.__class__)
-
-class Struct(Type):
-	def __init__(self, basename, generics, body):
-		Type.__init__(self, basename, generics)
-		self.body = body
-
-	def equivalent(self, other):
-		if not isinstance(other, Struct):
-			return False
-		return self.basename == other.basename
-
-class SpecializedType(Type):
-	def __init__(self, base, genericSubs):
-		Type.__init__(self, base.basename, [x.name for x in genericSubs])
-		self.base = base
-		self.genericSubs = genericSubs
-
-	def equivalent(self, other):
-		if not isinstance(other, SpecializedType):
-			return False
-		if not self.base.equivalent(other.base):
-			return False
-		return all(a.equivalent(b) for a, b in zip(self.genericSubs, other.genericSubs))
-
-class Typedef(Type):
-	def __init__(self, basename, generics, otype):
-		Type.__init__(self, basename, generics)
-		self.otype = otype
-
-class Macro(object):
-	def __init__(self, name, argnames, body):
-		self.name = name
-		self.argnames = argnames
-		self.body = body
+model = tatsu.compile(fslGrammar, name='FslGrammar')
 
 class FluffySpec(object):
 	def __init__(self, spec):
-		doc = Document(spec)
-		self.typedefs = {}
-		self.fileMatchers = {}
-
-		for node in doc:
-			if node.name == 'typedef':
-				assert isinstance(node[0], Symbol) and isinstance(node[1], Symbol)
-				basename, generics = self.parseTypedefName(node[0].value)
-				self.typedefs[node[0].value] = Typedef(basename, generics, node[1].value)
-			elif node.name == 'match-extension':
-				assert isinstance(node[1], Symbol)
-				self.fileMatchers[('extension', node[0].lower())] = node[1].value
-			elif node.name == 'struct':
-				assert isinstance(node[0], Symbol)
-				basename, generics = self.parseTypedefName(node[0].value)
-				self.typedefs[basename] = Struct(basename, generics, node.children)
-			else:
-				print 'Unsupported top-level node:', node
-
-	def parseTypedefName(self, name):
-		if '<' in name:
-			basename, generics = name.split('<', 1)
-			assert '<' not in generics and '>' not in generics[:-1] and generics[-1] == '>'
-			return basename, generics[:-1].split('|')
-		else:
-			return name, None
+		ast = model.parse(spec)
+		print ast
 
 def main(sfn):
-	fluffy = FluffySpec(file(sfn, 'r'))
+	fluffy = FluffySpec(file(sfn, 'r').read())
 
 if __name__=='__main__':
 	main(*sys.argv[1:])
