@@ -1,0 +1,173 @@
+typedef string = cstring
+typedef Vector2 = float32[2]
+typedef Vector3 = float32[3]
+typedef Quaternion = float32[4]
+
+typedef StringRef {
+	uint32 index
+	return string(stringTable[index...])
+}
+
+struct Mod {
+	magic('EQGM')
+	uint32 Version, strlen, numMat, numVert, numTri, numBones
+	uint8[strlen] stringTable
+	Material[numMat] Materials
+	(Version < 3 ? Vertex : Vertex3)[numVert] Vertices
+	Triangle[numTri] Triangles
+	Bone[numBones] Bones
+	if numBones > 0 {
+		BoneAssignment[numVert] BoneAssignments
+	}
+}
+
+struct Ter {
+	magic('EQGT')
+	uint32 Version, strlen, numMat, numVert, numTri
+	uint8[strlen] stringTable
+	Material[numMat] Materials
+	(Version < 3 ? Vertex : Vertex3)[numVert] Vertices
+	Triangle[numTri] Triangles
+}
+
+struct Material {
+	uint32 Index
+	StringRef Name, Shader
+	uint32 numProp
+	MatProperty[numProp] Properties
+}
+
+struct MatProperty {
+	StringRef Name
+	uint32 Type
+	match Type {
+		case 0 { float32 FloatValue }
+		case 2 { StringRef StringValue }
+		case 3 { uint32 ARGBValue }
+		default { unsupported }
+	}
+}
+
+struct Vertex {
+	Vector3 Position, Normal
+	Vector2 TexCoord
+}
+
+struct Vertex3 {
+	Vector3 Position, Normal
+	uint32 unk1
+	Vector2 TexCoord, unk2
+}
+
+struct Triangle {
+	uint32[3] Indices
+	uint32 MatIndex, Flag
+}
+
+struct Bone {
+	StringRef Name
+	int32 LinkBoneIndex
+	uint32 Flag
+	int32 ChildBoneIndex
+	Vector3 Position
+	Quaternion Rotation
+	Vector3 Scale
+}
+
+struct BoneAssignment {
+	uint32 Count
+	BoneWeight[4] Weights
+}
+
+struct BoneWeight {
+	int32 BoneIndex
+	float32 Value
+}
+
+struct Ani {
+	magic('EQGA')
+	uint32 Version, strlen, numBones, numUnk2
+	FrameBone[numBones] FrameBones
+}
+
+struct FrameBone {
+	uint32 numFrames
+	StringRef Bone
+	Frame[numFrames] Frames
+}
+
+struct Frame {
+	uint32 Time
+	Vector3 Translation
+	Quaternion Rotation
+	Vector3 Scaling
+}
+
+struct Zon {
+	magic('EQGZ')
+	uint32 Version, strlen, numFiles, numPlaceables, numUnk3, numLights
+	uint8[strlen] stringTable
+	StringRef[numFiles] files
+	Placeable[numPlaceables] Placeables
+}
+
+struct Placeable {
+	uint32 index
+	Filename = files[index]
+	StringRef Name
+	Vector3 Position Rotation
+	float32 Scale
+}
+
+struct S3D {
+	uint32 offset
+	magic('PFS\x20')
+	seek_abs(offset) {
+		uint32 count
+		FileEntry[count] entries
+	}
+
+	for i in 0...count {
+		entry = entries[i]
+		if entry.crc == 0x61580AC9 {
+			fileList = Directory(entry.decompressedData)
+			delete entries[i]
+			break
+		}
+	}
+
+	entries = sort_by(Entries) { return $0.crc }
+
+	Files = zip(fileList, entries).map_dict { return $0, $1.decompressedData }
+}
+
+struct FileEntry {
+	uint32 crc, offset, size
+	uint8[0] DecompressedData
+	uint32 len = 0
+	while len < size {
+		uint32 defLen, infLen
+		uint8[defLen] compressedData
+		decompressedData += zlib_inflate(compressedData)
+		len += infLen
+	}
+}
+
+typedef Directory {
+	uint32 dirCount
+	DirEntry[count - 1] entries
+	return entries
+}
+
+typedef DirEntry {
+	uint32 fnLen
+	uint8[fnLen] fnBytes
+	return string(fnBytes)
+}
+
+match_extension('zon', Zon)
+match_extension('ter', Ter)
+match_extension('mod', Mod)
+match_extension('ani', Ani)
+match_extension('s3d', S3D)
+match_extension('eqg', S3D)
